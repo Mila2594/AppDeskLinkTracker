@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.Menu?>
+<?import javafx.scene.control.MenuBar?>
+<?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane prefHeight="350.0" prefWidth="500.0" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.milacanete.linktracker.FXMLMainViewController">
+    <top>
+        <MenuBar BorderPane.alignment="CENTER">
+            <Menu mnemonicParsing="false" text="File">
+                <MenuItem fx:id="idLoadFileMenu" mnemonicParsing="false" onAction="#loadFile" text="Load file..." />
+                <MenuItem fx:id="idExitMenu" mnemonicParsing="false" onAction="#handleExit" text="Exit" />
+            </Menu>
+            <Menu mnemonicParsing="false" text="Process">
+                <MenuItem fx:id="idStartProcessMenu" mnemonicParsing="false" onAction="#startProcess" text="Start" />
+                <MenuItem fx:id="idClearViewMenu" mnemonicParsing="false" onAction="#clearView" text="Clear" />
+            </Menu>
+            <padding>
+                <Insets bottom="2.0" left="2.0" right="2.0" top="2.0" />
+            </padding>
+        </MenuBar>
+    </top>
+    <left>
+        <ListView fx:id="idNameWebPageListView" maxWidth="1.7976931348623157E308" prefWidth="160.0" BorderPane.alignment="CENTER" />
+    </left>
+    <right>
+        <ListView fx:id="idLinksPageListView" maxWidth="1.7976931348623157E308" prefWidth="200.0" BorderPane.alignment="CENTER" />
+    </right>
+    <center>
+        <VBox alignment="CENTER" prefHeight="200.0" prefWidth="100.0" spacing="3.0" BorderPane.alignment="CENTER">
+            <Label text="Total Pages" />
+            <Label fx:id="idTotalLoadedPagesLabel" text="Páginas cargadas" textFill="#aeaeae">
+                <VBox.margin>
+                    <Insets bottom="20.0" />
+                </VBox.margin>
+            </Label>
+            <Label text="Processed" />
+            <Label fx:id="idTotalProcessedPagesLabel" text="Páginas procesadas" textFill="#aeaeae">
+                <VBox.margin>
+                    <Insets bottom="20.0" />
+                </VBox.margin>
+            </Label>
+            <Label text="Total Links" />
+            <Label fx:id="idTotalLinksFoundLabel" text="Enlaces encontrados" textFill="#aeaeae" />
+        </VBox>
+    </center>
+</BorderPane>

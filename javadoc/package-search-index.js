@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"m":"com.milacanete.linktracker","l":"com.milacanete.linktracker"},{"m":"com.milacanete.linktracker","l":"com.milacanete.linktracker.model"},{"m":"com.milacanete.linktracker","l":"com.milacanete.linktracker.utils"}];updateSearchResults();

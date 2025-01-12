@@ -1,0 +1,415 @@
+package com.milacanete.linktracker;
+
+import com.milacanete.linktracker.model.WebPage;
+import com.milacanete.linktracker.utils.FileUtils;
+import com.milacanete.linktracker.utils.LinkReader;
+import com.milacanete.linktracker.utils.MessageUtils;
+import javafx.concurrent.ScheduledService;
+import javafx.concurrent.Task;
+import javafx.application.Platform;
+import javafx.fxml.FXML;
+import javafx.scene.control.*;
+import javafx.stage.FileChooser;
+import javafx.util.Duration;
+
+import java.io.File;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * Controlador principal para la vista FXML en la aplicación Link Tracker.
+ * Gestiona la interacción con la interfaz de usuario, como cargar archivos, procesar enlaces
+ * y mostrar los resultados de las páginas web.
+ * Utiliza la clase {@link com.milacanete.linktracker.utils.FileUtils} para cargar y leer el archivo de texto
+ * con las URL de las páginas web. La clase también se apoya en {@link com.milacanete.linktracker.utils.LinkReader}
+ * para obtener los enlaces de las páginas.
+ * Esta clase también maneja el progreso de las operaciones y actualiza la vista según los datos procesados.
+ * Utiliza la clase {@link com.milacanete.linktracker.utils.MessageUtils} para mostrar
+ * mensajes de confirmación o error al usuario.
+ */
+public class FXMLMainViewController {
+
+    /**
+     * Menú item para cargar un archivo
+     */
+    @FXML
+    public MenuItem idLoadFileMenu;
+    /**
+     * Menú item para iniciar el proceso de obtener links
+     */
+    @FXML
+    public MenuItem idStartProcessMenu;
+    /**
+     * Menú item para limpiar la vista
+     */
+    @FXML
+    public MenuItem idClearViewMenu;
+    /**
+     * Menú item para salir de la aplicación
+     */
+    @FXML
+    public MenuItem idExitMenu;
+    /**
+     * Label para mostrar el total de enlaces encontrados
+     */
+    @FXML
+    private Label idTotalLinksFoundLabel;
+    /**
+     * Label para mostrar el total de páginas procesadas
+     */
+    @FXML
+    private Label idTotalProcessedPagesLabel;
+    /**
+     * Label para mostrar el total de páginas cargadas
+     */
+    @FXML
+    private Label idTotalLoadedPagesLabel;
+    /**
+     * ListView para mostrar listas de links de las páginas web
+     */
+    @FXML
+    private ListView<String> idLinksPageListView;
+    /**
+     * ListView para mostrar el nombre de las páginas web
+     */
+    @FXML
+    private ListView<String> idNameWebPageListView;
+
+    // Lista de WebPages para almacenar las páginas y sus enlaces
+    private List<WebPage> webPagesList = new ArrayList<>();
+    // Contador para el total de enlaces
+    private final AtomicInteger totalLinks = new AtomicInteger(0);
+    // Logger de la clase para registro de errores
+    private static final Logger LOGGER = Logger.getLogger(FXMLMainViewController.class.getName());
+
+    /**
+     * Inicializa el controlador. Se configura el comportamiento de los elementos FXML
+     * y los listeners para los eventos de la interfaz de usuario.
+     */
+    @FXML
+    void initialize() {
+        // Listener para seleccionar una página y mostrar sus enlaces asociados
+        idNameWebPageListView.getSelectionModel().selectedItemProperty().addListener((_,_,newValue)->{
+            if (newValue != null) {
+                idLinksPageListView.getItems().clear();
+            }
+            showLinksListOfPage(newValue);
+        });
+
+        // Configurar CellFactory para añadir tooltips con el número de enlaces
+        idNameWebPageListView.setCellFactory(_ -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                // Si no hay datos o el item es null, ocultar el Tooltip
+                if (empty || item == null) {
+                    setText(null);
+                    setTooltip(null);
+                } else {
+                    setText(item);
+                    // Encontrar la página correspondiente
+                    WebPage page = webPagesList.stream()
+                            .filter(webPage -> webPage.getPageName().equals(item))
+                            .findFirst()
+                            .orElse(null);
+                    if (page != null) {
+                        // Crear y asignar un Tooltip con el número de enlaces
+                        Tooltip tooltip = new Tooltip("Enlaces asociados: " + page.getLinksPage().size());
+                        setTooltip(tooltip);
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Asociado al menú de loadFile
+     * Método para cargar el archivo de texto con URLs y procesa las páginas contenidas en el archivo.
+     * Si ya hay datos cargados, pregunta si se desea limpiar la vista antes de continuar.
+     * Sí el archivo no contiene el formato correcto, captura la excepción @link IllegalArgumentException.
+     */
+    @FXML
+    void loadFile() {
+
+        // Si ya hay datos cargados, pregunta si se desea limpiar la vista
+        if (!idLinksPageListView.getItems().isEmpty() || !idTotalLoadedPagesLabel.getText().equals("0")) {
+            boolean confirm = MessageUtils.showConfirmation("La interfaz contiene datos. ¿Desea limpiarla antes de continuar?");
+            if (confirm) {
+                clearView();
+            } else {
+                return; // Cancela la operación si no desea limpiar
+            }
+        }
+
+        File fileChooser = chooseFile(); // Abre el diálogo de selección de archivos
+        if (!validateFile(fileChooser)) return; //validar el archivo
+
+        Path path = fileChooser.toPath();
+        //intentar leer el archivo para cargar la lista de WebPages
+        try {
+            webPagesList = FileUtils.loadPages(path);
+            // Si la lista de WebPages está vacía, mensaje de error no hay páginas en el archivo
+            if (webPagesList.isEmpty()) {
+                MessageUtils.showError("No se encontraron páginas válidas en el archivo.");
+                //LOGGER.log(Level.WARNING, "Archivo procesado pero no contiene páginas válidas: {0}", path);
+            } else {
+                // Muestra un mensaje de confirmación con el total de páginas cargadas
+                MessageUtils.showMessage(String.format("%d páginas encontradas.", webPagesList.size()));
+                idTotalLoadedPagesLabel.setText(String.valueOf(webPagesList.size()));
+                //LOGGER.log(Level.INFO, "Archivo cargado con éxito: {0}. Total de páginas: {1}",new Object[]{path, webPagesList.size()});
+            }
+        } catch (Exception e) {
+            //Si no se puede leer el archivo, muestra un mensaje de error
+            MessageUtils.showError("Error el fichero no contiene el formato correcto.");
+            //LOGGER.log(Level.SEVERE, "Error al procesar el archivo: {0}. Detalle: {1}",new Object[]{path, e.getMessage()});
+        }
+    }
+
+    /**
+     * Muestra el diálogo de selección de archivos y devuelve el archivo seleccionado.
+     * @return Archivo seleccionado o {@code null} si no se seleccionó ninguno.
+     */
+    private File chooseFile() {
+        FileChooser fileChooser = new FileChooser();
+        //permite todo tipo de extensión de ficheros, pero se controla que el fichero tenga el contenido correcto
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text files","*.*"));
+        return fileChooser.showOpenDialog(null);
+    }
+
+    /**
+     * Válida que el archivo se cargó y no esté vacío.
+     * @param file El archivo a validar.
+     * @return {@code true} si el archivo es válido; {@code false} en caso contrario.
+     */
+    private boolean validateFile(File file) {
+        if (file == null || !file.exists()) {
+            MessageUtils.showError("No se seleccionó ningún archivo.");
+            //LOGGER.log(Level.WARNING, "El archivo no existe o no se seleccionó ninguno         .");
+            return false;
+        }
+        if (file.length() == 0) {
+            MessageUtils.showError("El archivo esta vació.");
+            //LOGGER.log(Level.WARNING, "El archivo está vacío: {0}", file.getAbsolutePath());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Asociado al menú de exit
+     * Cierra la aplicación.
+     */
+    @FXML
+    void exitView() {
+        Platform.exit();
+    }
+
+    /**
+     * Asociado al menú de startProcess
+     * Inicia el procesamiento de enlaces en las páginas web.
+     * Obtiene los enlaces de cada página de manera concurrente utilizando CompletableFutures.
+     */
+    @FXML
+    void startProcess() {
+
+        // Verifica si la lista de páginas web está vacía antes de continuar
+        if (validateWebPagesEmpty(webPagesList)) return;
+        totalLinks.set(0); // Resetea el contador de enlaces encontrados
+
+        ConcurrentLinkedDeque<WebPage> completedPages = new ConcurrentLinkedDeque<>(); //lista de páginas procesadas
+
+        // Lanza tareas asíncronas para procesar cada página web en paralelo
+        List<CompletableFuture<Void>> tasks = webPagesList.stream()
+                .map(webPage -> CompletableFuture.supplyAsync(() -> {
+                    // Obtiene los enlaces de la página web
+                    List<String> links = LinkReader.getLinks(webPage.getPageUrl());
+                    // Si no se encuentran enlaces válidos de la página, se registra una advertencia
+                    if (links.isEmpty()) {
+                        LOGGER.log(Level.WARNING, "No se encontraron enlaces en la página: {0}, URL: {1}",
+                                new Object[]{webPage.getPageName(), webPage.getPageUrl()});
+                    }
+                    webPage.setLinksPage(links);  // Asigna la lista de los enlaces a la página web
+                    totalLinks.addAndGet(links.size());  // Actualiza el total de enlaces encontrados
+                    return webPage;
+                }).thenAccept(page -> {
+                    //Si la tarea se completa, se agrega a la lista de páginas procesadas
+                    if (page != null) {
+                        completedPages.add(page);
+                        // Actualización progresiva en la UI con las páginas procesadas
+                        updateView(totalLinks.get(), completedPages.size(), extractPageNames(completedPages));
+                    }
+                }))
+                .toList();
+
+        // Espera a que todas las tareas se completen y actualiza la vista final
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
+                .thenRun(() -> updateView(totalLinks.get(), completedPages.size(), extractPageNames(completedPages)));
+
+        LOGGER.log(Level.INFO, "ListView actualizado con {0} páginas procesadas.", webPagesList.size());
+
+
+        /*
+        ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors());
+
+        List<Future<WebPage>> futuresWebPage = new ArrayList<>();
+
+
+        // Lanza un hilo por cada pagina
+        for (WebPage webPage : webPagesList) {
+            futuresWebPage.add(threadPoolExecutor.submit(() -> {
+                try {
+                    // Lee los enlaces de la pagina
+                    List<String> links = LinkReader.getLinks(webPage.getPageUrl());
+                    webPage.setLinksPage(links); // Guarda los enlaces de la pagina
+                    totalLinks.addAndGet(links.size()); // Aumenta el total de enlaces
+                    return webPage;
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Error procesando página: {0}", webPage.getPageName());
+                    throw e;
+                }
+            }));
+        }
+
+        // Controlar el progreso con ScheduledService
+        monitorearProgreso(threadPoolExecutor, futuresWebPage);
+
+        LOGGER.log(Level.INFO, "Procesamiento iniciado con {0} tareas.", futuresWebPage.size());
+         */
+    }
+
+    /**
+     * Verifica si la lista de páginas web está vacía.
+     * @param webPages Lista de páginas a verificar.
+     * @return {@code true} si la lista está vacía, {@code false} en caso contrario.
+     */
+    private boolean validateWebPagesEmpty(List<WebPage> webPages) {
+        if (webPages.isEmpty()) {
+            MessageUtils.showError("No hay páginas para procesar.");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Extrae los nombres de las páginas desde una colección de WebPage.
+     *
+     * @param pages Colección de WebPage.
+     * @return Lista de nombres de páginas.
+     */
+    private List<String> extractPageNames(Collection<WebPage> pages) {
+        return pages.stream()
+                .map(WebPage::getPageName)
+                .toList();
+    }
+
+    /**
+     * Actualiza la vista de la interfaz de usuario con el progreso actual.
+     * @param totalLinks El total de enlaces encontrados.
+     * @param totalProcessedPages El total de páginas procesadas.
+     * @param completedWebPages Las páginas web completadas.
+     */
+    private void updateView(int totalLinks, int totalProcessedPages, List<String> completedWebPages) {
+        // Actualizar los valores en las etiquetas
+        Platform.runLater(() -> {
+            idTotalLinksFoundLabel.setText(String.valueOf(totalLinks));
+            idTotalProcessedPagesLabel.setText(String.valueOf(totalProcessedPages));
+        });
+
+        // Actualizar la lista de nombres de páginas
+        Platform.runLater(() -> {
+            idNameWebPageListView.getItems().clear();
+            idNameWebPageListView.getItems().addAll(completedWebPages);
+        });
+    }
+
+
+    // Muestra el progreso de la tarea en la interfaz de usuario
+    // la tarea es monitorear el progreso de la ejecución de un conjunto de hilos en el ThreadPoolExecutor
+    private void monitorearProgreso(ThreadPoolExecutor executor, List<Future<WebPage>> futuresWebPage) {
+        // Monitor de progreso que se ejecuta periódicamente
+        ScheduledService<Boolean> progressService = new ScheduledService<>() {
+            @Override
+            protected Task<Boolean> createTask() {
+                return new Task<>() {
+                    @Override
+                    protected Boolean call() {
+                        // Verifica si todos los hilos del ejecutor han terminado
+                        return executor.getActiveCount() == 0 ;
+                    }
+                };
+            }
+        };
+
+        progressService.setPeriod(Duration.millis(100)); // Ejecutar cada 100 ms
+        progressService.setOnSucceeded(_ -> {
+            // Actualizar las etiquetas de progreso
+            idTotalProcessedPagesLabel.setText(String.valueOf(webPagesList.size() - executor.getActiveCount()));
+            idTotalLinksFoundLabel.setText(String.valueOf(totalLinks.get()));
+            // Si todos los hilos han terminado, recolecta los resultados
+            if (progressService.getValue()) {
+                List<WebPage> completedPages = futuresWebPage.stream()
+                        .map(future -> {
+                            try {
+                                return future.get();  // Obtener cada WebPage procesada
+                            } catch (Exception e) {
+                                LOGGER.log(Level.SEVERE, "Error obteniendo página procesada", e);
+                                return null;
+                            }
+                        })
+                        .filter(Objects::nonNull) // Filtrar nulos
+                        .toList();
+
+                idNameWebPageListView.getItems().clear();
+                idNameWebPageListView.getItems().addAll(completedPages.stream()
+                        .map(WebPage::getPageName)
+                        .toList());
+
+                executor.shutdown(); // Apagar el ejecutor
+                progressService.cancel(); // Detener el servicio
+            }
+        });
+
+        progressService.start(); // Inicia el servicio de monitoreo de progreso
+    }
+
+    /**
+     * Muestra los enlaces asociados con la página seleccionada, se implementa en el listener de
+     * la list view de nombres de páginas.
+     * @param pageName Nombre de la página seleccionada.
+     */
+    private void showLinksListOfPage(String pageName) {
+        WebPage selectedPage = webPagesList.stream()
+                .filter(webPage -> webPage.getPageName().equals(pageName))
+                .findFirst()
+                .orElse(null);
+
+        idLinksPageListView.getItems().clear();
+        if (selectedPage != null) {
+            idLinksPageListView.getItems().addAll(selectedPage.getLinksPage());
+        }
+    }
+
+    /**
+     * Limpiar la vista para reiniciar los datos.
+     */
+    @FXML
+    void clearView() {
+        idNameWebPageListView.getItems().clear();
+        idLinksPageListView.getItems().clear();
+
+        idTotalLinksFoundLabel.setText("0");
+        idTotalProcessedPagesLabel.setText("0");
+        idTotalLoadedPagesLabel.setText("0");
+
+        webPagesList.clear();
+        totalLinks.set(0);
+    }
+}
